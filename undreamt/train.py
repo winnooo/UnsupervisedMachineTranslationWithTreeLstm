@@ -362,11 +362,25 @@ class Trainer:
 
         if self.type == 'src2src' or self.type == 'src2trg':
             src, trg = self.corpus.next_batch(self.batch_size, self.core_nlp, self.src_lang)
-            trees = self.get_trees_text(src, self.src_lang, self.core_nlp)
+            if self.type == 'src2trg':
+                trees = []
+                for sentence in src:
+                    token_size = len(sentence.strip().split())
+                    one_line_tree = ' '.join(str(i) for i in range(token_size))
+                    trees.append(one_line_tree)
+            else:
+                trees = self.get_trees_text(src, self.src_lang, self.core_nlp)
 
         if self.type == 'trg2trg' or self.type == 'trg2src':
             src, trg = self.corpus.next_batch(self.batch_size, self.core_nlp, self.trg_lang)
-            trees = self.get_trees_text(src, self.trg_lang, self.core_nlp)
+            if self.type == 'trg2src':
+                trees = []
+                for sentence in src:
+                    token_size = len(sentence.strip().split())
+                    one_line_tree = ' '.join(str(i) for i in range(token_size))
+                    trees.append(one_line_tree)
+            else:
+                trees = self.get_trees_text(src, self.trg_lang, self.core_nlp)
 
         temp = [len(data.tokenize(sentence)) for sentence in src]
         if not all(x == temp[0] for x in temp):
