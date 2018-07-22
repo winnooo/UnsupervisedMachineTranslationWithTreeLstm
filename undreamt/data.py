@@ -242,6 +242,9 @@ class BacktranslatorCorpusReader:
 
     def get_trees_text(self, text, lang, corenlp):
         t = time.time()
+        for i in range(len(text)):
+            if text[i] == '':
+                text[i] = '.'
         if lang == "english":
             props = {'annotators': 'tokenize, ssplit, pos, depparse',
                      'tokenize.whitespace': 'true',

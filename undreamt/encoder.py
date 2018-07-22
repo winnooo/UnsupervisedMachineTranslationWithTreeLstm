@@ -46,15 +46,18 @@ class RNNEncoder(nn.Module):
             ids = torch.stack([ids[:, i] for i in true2sorted], dim=1)
             lengths = [lengths[i] for i in true2sorted]
         embeddings = word_embeddings(data.word_ids(ids)) + self.special_embeddings(data.special_ids(ids))
-        if is_varlen:
-            embeddings = nn.utils.rnn.pack_padded_sequence(embeddings, lengths)
+        #if is_varlen:
+        #    max_length = sorted_lengths
+        #    for tree in trees:
+
+        #    embeddings = nn.utils.rnn.pack_padded_sequence(embeddings, lengths)
         #output, hidden = self.rnn(embeddings, hidden)
         output, hidden = self.rnn(trees, embeddings)
 
         #if self.bidirectional:
         #    hidden = torch.stack([torch.cat((hidden[2*i], hidden[2*i+1]), dim=1) for i in range(self.layers)])
-        if is_varlen:
-            output = nn.utils.rnn.pad_packed_sequence(output)[0]
+        #if is_varlen:
+        #    output = nn.utils.rnn.pad_packed_sequence(output)[0]
         if not is_sorted:
             hidden = torch.stack([hidden[:, i, :] for i in sorted2true], dim=1)
             output = torch.stack([output[:, i, :] for i in sorted2true], dim=1)
@@ -119,14 +122,26 @@ class TreeLSTM(nn.Module):
     def forward(self, trees, inputs):
         contexts = []
         hs = []
-        for i in range(len(inputs[0,:,:])):  #batch size
-            treewithstate = self.childsumtreelstm(self.read_tree(trees[i]),inputs[:,i,:])
+        #if type(inputs) is torch.nn.utils.rnn.PackedSequence:
+        #    for i in range(len(inputs[0])):  # batch size
+        #        treewithstate = self.childsumtreelstm(self.read_tree(trees[i]), inputs[0][i])
+        #        contexts.append(torch.stack(treewithstate.get_context()).squeeze())
+        #        hs.append(treewithstate.state[1])
+        #else:
+        for i in range(len(inputs[0, :, :])):  # batch size
+            treewithstate = self.childsumtreelstm(self.read_tree(trees[i]), inputs[:, i, :])
             contexts.append(torch.stack(treewithstate.get_context()).squeeze())
             hs.append(treewithstate.state[1])
+        lengths = sorted([len(context) for context in contexts])
+        if lengths[0] != lengths[-1]:
+            contexts = [self.pad(context, lengths[-1]) for context in contexts]
 
         contexts_tensor = torch.stack(contexts).squeeze().permute(1,0,2)
         hs_tensor = torch.stack(hs).permute(1,0,2)
         return contexts_tensor, hs_tensor
+
+    def pad(self, tensor, length):
+        return torch.cat([tensor, tensor.new(length - tensor.size(0), *tensor.size()[1:]).zero_()])
 
     def read_trees(self, trees_text):
         return [self.read_tree(line) for line in trees_text]

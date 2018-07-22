@@ -361,16 +361,12 @@ class Trainer:
         trees = []
 
         if self.type == 'src2src' or self.type == 'src2trg':
-            src, trg = self.corpus.next_batch(self.batch_size, self.core_nlp, self.src_lang)
+            src, trg = self.corpus.next_batch(self.batch_size, self.core_nlp, self.trg_lang)
             trees = self.get_trees_text(src, self.src_lang, self.core_nlp)
 
         if self.type == 'trg2trg' or self.type == 'trg2src':
-            src, trg = self.corpus.next_batch(self.batch_size, self.core_nlp, self.trg_lang)
+            src, trg = self.corpus.next_batch(self.batch_size, self.core_nlp, self.src_lang)
             trees = self.get_trees_text(src, self.trg_lang, self.core_nlp)
-
-        temp = [len(data.tokenize(sentence)) for sentence in src]
-        if not all(x == temp[0] for x in temp):
-            print("yo")
 
         self.src_word_count += sum([len(data.tokenize(sentence)) + 1 for sentence in src])  # TODO Depends on special symbols EOS/SOS
         self.trg_word_count += sum([len(data.tokenize(sentence)) + 1 for sentence in trg])  # TODO Depends on special symbols EOS/SOS
@@ -392,6 +388,9 @@ class Trainer:
 
     def get_trees_text(self, text, lang, corenlp):
         t = time.time()
+        for i in range(len(text)):
+            if text[i] == '':
+                text[i] = '.'
         if lang == "english":
             props = {'annotators': 'tokenize, ssplit, pos, depparse',
                      'tokenize.whitespace': 'true',
