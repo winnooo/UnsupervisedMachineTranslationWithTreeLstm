@@ -363,22 +363,14 @@ class Trainer:
         if self.type == 'src2src' or self.type == 'src2trg':
             src, trg = self.corpus.next_batch(self.batch_size, self.core_nlp, self.src_lang)
             if self.type == 'src2trg':
-                trees = []
-                for sentence in src:
-                    token_size = len(sentence.strip().split())
-                    one_line_tree = ' '.join(str(i) for i in range(token_size))
-                    trees.append(one_line_tree)
+                trees = self.get_one_line_tree(src)
             else:
                 trees = self.get_trees_text(src, self.src_lang, self.core_nlp)
 
         if self.type == 'trg2trg' or self.type == 'trg2src':
             src, trg = self.corpus.next_batch(self.batch_size, self.core_nlp, self.trg_lang)
             if self.type == 'trg2src':
-                trees = []
-                for sentence in src:
-                    token_size = len(sentence.strip().split())
-                    one_line_tree = ' '.join(str(i) for i in range(token_size))
-                    trees.append(one_line_tree)
+                trees = self.get_one_line_tree(src)
             else:
                 trees = self.get_trees_text(src, self.trg_lang, self.core_nlp)
 
@@ -403,6 +395,14 @@ class Trainer:
         for optimizer in self.optimizers:
             optimizer.step()
         self.backward_time += time.time() - t
+
+    def get_one_line_tree(self, src):
+        trees = []
+        for sentence in src:
+            token_size = len(sentence.strip().split())
+            one_line_tree = ' '.join(str(i) for i in reversed(range(token_size)))
+            trees.append(one_line_tree)
+        return trees
 
     def get_trees_text(self, text, lang, corenlp):
         t = time.time()
