@@ -25,6 +25,7 @@ import argparse
 import numpy as np
 import sys
 import time
+import ast
 
 
 def main_train():
@@ -48,6 +49,7 @@ def main_train():
     corpora_group.add_argument('--src_lang', help='the source language')
     corpora_group.add_argument('--trg_lang', help='the target language')
     corpora_group.add_argument('--core_nlp', help='path of stanford core nlp')
+    corpora_group.add_argument('--backtranslation_one_line_tree', type=ast.literal_eval, default=True, help='whether to use one line tree when backtranslation')
 
     # Embeddings/vocabulary
     embedding_group = parser.add_argument_group('embeddings', 'Embedding related arguments; either give pre-trained cross-lingual embeddings, or a vocabulary and embedding dimensionality to randomly initialize them')
@@ -319,7 +321,7 @@ def main_train():
     print("Training")
     for step in range(1, args.iterations + 1):
         for trainer in trainers:
-            trainer.step()
+            trainer.step(args.backtranslation_one_line_tree)
 
         if args.save is not None and args.save_interval > 0 and step % args.save_interval == 0:
             save_models('it{0}'.format(step))
@@ -348,7 +350,7 @@ class Trainer:
         self.src_lang = src_lang
         self.trg_lang = trg_lang
 
-    def step(self):
+    def step(self,one_line_tree):
         # Reset gradients
         for optimizer in self.optimizers:
             optimizer.zero_grad()
@@ -362,14 +364,14 @@ class Trainer:
 
         if self.type == 'src2src' or self.type == 'src2trg':
             src, trg = self.corpus.next_batch(self.batch_size, self.core_nlp, self.src_lang)
-            if self.type == 'src2trg':
+            if self.type == 'src2trg' and one_line_tree:
                 trees = self.get_one_line_tree(src)
             else:
                 trees = self.get_trees_text(src, self.src_lang, self.core_nlp)
 
         if self.type == 'trg2trg' or self.type == 'trg2src':
             src, trg = self.corpus.next_batch(self.batch_size, self.core_nlp, self.trg_lang)
-            if self.type == 'trg2src':
+            if self.type == 'trg2src' and one_line_tree:
                 trees = self.get_one_line_tree(src)
             else:
                 trees = self.get_trees_text(src, self.trg_lang, self.core_nlp)
