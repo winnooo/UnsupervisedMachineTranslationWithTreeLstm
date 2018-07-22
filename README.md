@@ -1,1 +1,2 @@
 # UnsupervisedMachineTranslationWithTreeLstm
+pip install stanfordcorenlp

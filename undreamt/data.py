@@ -250,13 +250,10 @@ class BacktranslatorCorpusReader:
                      'ssplit.eolonly': 'true',
                      'outputFormat': 'json'
                      }
-            trees = list()
-            for line in text:
-                raw_data = corenlp.annotate(line, properties=props)
-                json_data = json.loads(raw_data)
-                raw_tree = json_data['sentences'][0]['basicDependencies']
-                tree_text = self.convert_raw_tree(raw_tree)
-                trees.append(tree_text)
+            lines = '\n'.join(text)
+            raw_data = corenlp.annotate(lines, properties=props)
+            json_data = json.loads(raw_data)['sentences']
+            trees = [self.convert_raw_tree(tree['basicDependencies']) for tree in json_data]
             print('Geting tree takes' + str(time.time() - t))
             return trees
         if lang == "french":
@@ -269,13 +266,10 @@ class BacktranslatorCorpusReader:
                      'pos.model' : 'edu/stanford/nlp/models/pos-tagger/french/french-ud.tagger',
                      'depparse.model' : 'edu/stanford/nlp/models/parser/nndep/UD_French.gz'
                      }
-            trees = list()
-            for line in text:
-                raw_data = corenlp.annotate(line, properties=props)
-                json_data = json.loads(raw_data)
-                raw_tree = json_data['sentences'][0]['basicDependencies']
-                tree_text = self.convert_raw_tree(raw_tree)
-                trees.append(tree_text)
+            lines = '\n'.join(text)
+            raw_data = corenlp.annotate(lines, properties=props)
+            json_data = json.loads(raw_data)['sentences']
+            trees = [self.convert_raw_tree(tree['basicDependencies']) for tree in json_data]
             print('Geting tree takes' + str(time.time() - t))
             return trees
 
