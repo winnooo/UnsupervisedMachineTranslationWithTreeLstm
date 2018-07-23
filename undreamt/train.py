@@ -387,7 +387,7 @@ class Trainer:
         self.backward_time += time.time() - t
 
     def get_trees_text(self, text, lang, corenlp):
-        t = time.time()
+        #t = time.time()
         for i in range(len(text)):
             if text[i] == '':
                 text[i] = '.'
@@ -403,7 +403,7 @@ class Trainer:
             raw_data = corenlp.annotate(lines, properties=props)
             json_data = json.loads(raw_data)['sentences']
             trees = [self.convert_raw_tree(tree['basicDependencies']) for tree in json_data]
-            print('Geting tree takes' + str(time.time() - t))
+            #print('Geting tree takes' + str(time.time() - t))
             return trees
         if lang == "french":
             props = {'annotators': 'tokenize, ssplit, pos, depparse',
@@ -419,7 +419,7 @@ class Trainer:
             raw_data = corenlp.annotate(lines, properties=props)
             json_data = json.loads(raw_data)['sentences']
             trees = [self.convert_raw_tree(tree['basicDependencies']) for tree in json_data]
-            print('Geting tree takes' + str(time.time() - t))
+            #print('Geting tree takes' + str(time.time() - t))
             return trees
 
 

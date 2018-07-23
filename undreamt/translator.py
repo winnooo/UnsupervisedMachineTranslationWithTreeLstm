@@ -49,12 +49,12 @@ class Translator:
         self._train(train)
         ids, lengths = self.src_dictionary.sentences2ids(sentences, sos=False, eos=True)
 
-        if train and self.denoising:  # Add order noise
-            for i, length in enumerate(lengths):
-                if length > 2:
-                    for it in range(length//2):
-                        j = random.randint(0, length-2)
-                        ids[j][i], ids[j+1][i] = ids[j+1][i], ids[j][i]
+        #if train and self.denoising:  # Add order noise
+        #    for i, length in enumerate(lengths):
+        #        if length > 2:
+        #            for it in range(length//2):
+        #                j = random.randint(0, length-2)
+        #                ids[j][i], ids[j+1][i] = ids[j+1][i], ids[j][i]
 
         varids = self.device(Variable(torch.LongTensor(ids), requires_grad=False, volatile=not train))
         hidden = self.device(self.encoder.initial_hidden(len(sentences)))
@@ -94,11 +94,11 @@ class Translator:
                         pending.discard(i)
         return self.trg_dictionary.ids2sentences(translations)
 
-    def beam_search(self, sentences, beam_size=12, max_ratio=2, train=False):
+    def beam_search(self, sentences, trees, beam_size=12, max_ratio=2, train=False):
         self._train(train)
         batch_size = len(sentences)
         input_lengths = [len(data.tokenize(sentence)) for sentence in sentences]
-        hidden, context, context_lengths = self.encode(sentences, train)
+        hidden, context, context_lengths = self.encode(sentences, trees, train)
         translations = [[] for sentence in sentences]
         pending = set(range(batch_size))
 
