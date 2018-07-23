@@ -34,7 +34,7 @@ class RNNEncoder(nn.Module):
         self.special_embeddings = nn.Embedding(data.SPECIAL_SYMBOLS+1, embedding_size, padding_idx=0)
         #self.rnn = nn.GRU(embedding_size, self.hidden_size, bidirectional=bidirectional, num_layers=layers,dropout=dropout)
 
-        self.rnn = TreeLSTM()
+        self.rnn = TreeLSTM(embedding_size, bidirectional, self.hidden_size)
 
     def forward(self, ids, lengths, word_embeddings, hidden, trees):
         sorted_lengths = sorted(lengths, reverse=True)
@@ -64,7 +64,7 @@ class RNNEncoder(nn.Module):
         return Variable(torch.zeros(self.layers*self.directions, batch_size, self.hidden_size), requires_grad=False)
 
 
-# module for childsumtreelstm
+# module for childsumtreelstm - bottom up
 class ChildSumTreeLSTM(nn.Module):
     def __init__(self, in_dim, mem_dim):
         super(ChildSumTreeLSTM, self).__init__()
@@ -100,32 +100,82 @@ class ChildSumTreeLSTM(nn.Module):
             child_c = inputs[0].detach().new(1, self.mem_dim).fill_(0.).requires_grad_()
             child_h = inputs[0].detach().new(1, self.mem_dim).fill_(0.).requires_grad_()
         else:
-            #child_c, child_h = zip(*map(lambda x: x.state, tree.children)) #for x in tree.children, zip x.state
-            child_c, child_h = zip(* map(lambda x: x.state, tree.children))    # added vicky
+            child_c, child_h = zip(*map(lambda x: x.state, tree.children)) #for x in tree.children, zip x.state
             child_c, child_h = torch.cat(child_c, dim=0), torch.cat(child_h, dim=0)
 
         tree.state = self.node_forward(inputs[tree.idx], child_c, child_h)    #then tree would have one more attribute:state, including both memory cell and hidden state
         return tree
 
+class TopDownTreeLSTM(nn.Module):
+    def __init__(self, in_dim, mem_dim):
+        super(TopDownTreeLSTM,self).__init__()
+        self.in_dim = in_dim
+        self.mem_dim = mem_dim
+        self.Wrootx = nn.Linear(self.mem_dim, self.mem_dim)
+        self.Wrooth = nn.Linear(self.mem_dim, self.mem_dim)
+        self.ifoux = nn.Linear(self.mem_dim, self.mem_dim*4)
+        self.ifouh = nn.Linear(self.mem_dim, self.mem_dim*4)
 
+    def forward(self, tree):
+        if tree.parent is None:
+            parent_c, parent_h = tree.state
+            tree.state_top = self.Wrootx(parent_c), self.Wrooth(parent_h)
+            for idx in range(tree.num_children):
+                self.forward(tree.children[idx])
+        else:
+            input_c, input_h = tree.state
+            parent_c, parent_h = tree.parent.state_top
+            tree.state_top = self.node_forward(input_h, parent_c, parent_h)
+            for idx in range(tree.num_children):
+                self.forward(tree.children[idx])
+        return tree
+
+    def node_forward(self, input_h, parent_c, parent_h):
+        ifou = self.ifoux(input_h) + self.ifouh(parent_h)
+        i, f, o, u = torch.split(ifou, ifou.size(1) // 4, dim=1)
+        i, f, o, u = F.sigmoid(i), F.sigmoid(f), F.sigmoid(o), F.sigmoid(u)
+
+        c = torch.mul(i, u) + torch.mul(f, parent_c)
+        h = torch.mul(o, F.tanh(c))
+        return c, h
 
 # putting the whole model together
 class TreeLSTM(nn.Module):
 
-    def __init__(self):
+    def __init__(self, input_size, topdownenabled, hidden_size):
         super(TreeLSTM, self).__init__()
-        self.childsumtreelstm = ChildSumTreeLSTM(300, 300)
+        self.topdownenabled = topdownenabled
+        self.childsumtreelstm = ChildSumTreeLSTM(input_size, hidden_size)
+        if topdownenabled:
+            self.topdowntreelstm = TopDownTreeLSTM(input_size, hidden_size)
 
     def forward(self, trees, inputs):
-        contexts = []
-        hs = []
-        for i in range(len(inputs[0,:,:])):  #batch size
-            treewithstate = self.childsumtreelstm(self.read_tree(trees[i]),inputs[:,i,:])
-            contexts.append(torch.stack(treewithstate.get_context()).squeeze())
-            hs.append(treewithstate.state[1])
+        if self.topdownenabled is False:
+            contexts = []
+            hs = []
+            for i in range(len(inputs[0,:,:])):  #batch size
+                treewithstate = self.childsumtreelstm(self.read_tree(trees[i]), inputs[:, i, :])
+                contexts.append(torch.stack(treewithstate.get_context()).squeeze())
+                hs.append(treewithstate.state[1])
 
-        contexts_tensor = torch.stack(contexts).squeeze().permute(1,0,2)
-        hs_tensor = torch.stack(hs).permute(1,0,2)
+            contexts_tensor = torch.stack(contexts).squeeze().permute(1, 0, 2)
+            hs_tensor = torch.stack(hs).permute(1, 0, 2)
+        else:
+            contexts = []
+            hs = []
+            contexts_top = []
+            hs_top = []
+
+            for i in range(len(inputs[0, :, :])):  # batch size
+                treewithstate = self.childsumtreelstm(self.read_tree(trees[i]), inputs[:, i, :])
+                contexts.append(torch.stack(treewithstate.get_context()).squeeze())
+                hs.append(treewithstate.state[1])
+                topdowntreewithstate = self.topdowntreelstm(treewithstate)
+                contexts_top.append(torch.stack(topdowntreewithstate.get_context_top()).squeeze())
+                hs_top.append(topdowntreewithstate.state_top[1])
+
+            contexts_tensor = torch.cat((torch.stack(contexts), torch.stack(contexts_top)), 2).squeeze().permute(1, 0, 2)
+            hs_tensor = torch.cat((torch.stack(hs), torch.stack(hs_top)),2).permute(1,0,2)
         return contexts_tensor, hs_tensor
 
     def read_trees(self, trees_text):
