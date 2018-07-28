@@ -100,7 +100,7 @@ class TreeReader:
     def get_tree_length(self, tree_text):
 #        tree_text = tree_text.replace('[', '').replace(']', '').strip().replace(' ', ',').replace('\n', '').split(',')
 #        tree_text = list(map(int, tree_text))
-        return len(tree_text.strip().split())
+        return tree_text.strip().split().count('S')
 
     def _remove(self, index):
         length = self.cache[index][0]
