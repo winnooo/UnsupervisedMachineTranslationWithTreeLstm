@@ -4,6 +4,7 @@ class Tree(object):
         self.num_children = 0
         self.children = list()
         self.context = list()
+        self.context_top = list()
 
     def add_child(self, child):
         child.parent = self
@@ -43,6 +44,18 @@ class Tree(object):
                 self.get_child_context(child)
 
         self.context.append([tree.idx,tree.state[1]])
+
+    def get_context_top(self):
+        self.get_child_context_top(self)
+        sorted_context = sorted(self.context_top)
+        return [sorted_context[i][1] for i in range(len(sorted_context))]
+
+    def get_child_context_top(self, tree):
+        if tree.num_children != 0:
+            for child in tree.children:
+                self.get_child_context_top(child)
+
+        self.context_top.append([tree.idx, tree.state_top[1]])
 
     def add_eos(self, index):
         eos = Tree()

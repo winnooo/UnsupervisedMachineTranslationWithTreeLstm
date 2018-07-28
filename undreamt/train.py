@@ -25,6 +25,7 @@ import argparse
 import numpy as np
 import sys
 import time
+import ast
 
 
 def main_train():
@@ -48,6 +49,7 @@ def main_train():
     corpora_group.add_argument('--src_lang', help='the source language')
     corpora_group.add_argument('--trg_lang', help='the target language')
     corpora_group.add_argument('--core_nlp', help='path of stanford core nlp')
+    corpora_group.add_argument('--backtranslation_one_line_tree', type=ast.literal_eval, default=False, help='whether to use one line tree when backtranslation')
 
     # Embeddings/vocabulary
     embedding_group = parser.add_argument_group('embeddings', 'Embedding related arguments; either give pre-trained cross-lingual embeddings, or a vocabulary and embedding dimensionality to randomly initialize them')
@@ -113,6 +115,8 @@ def main_train():
 
     # Select device
     device = devices.gpu if args.cuda else devices.cpu
+#    if args.cuda:
+#        torch.backends.cudnn.benchmark = True
 
     # Create optimizer lists
     src2src_optimizers = []
@@ -133,6 +137,8 @@ def main_train():
     # Start core nlp server
     print("Starting Stanford CoreNLP server")
     core_nlp = StanfordCoreNLP(args.core_nlp, memory='8g')
+    if args.backtranslation_one_line_tree == True and args.src_tree is not None and args.trg_tree is not None:
+        core_nlp.close()
 
     # Load word embeddings
     print("Loading word embeddings")
@@ -200,8 +206,19 @@ def main_train():
         add_optimizer(trg_generator, (trg2trg_optimizers, src2trg_optimizers))
 
     # Build encoder
+    from .encoder import ChildSumTreeLSTM
+    from .encoder import TreeLSTM
+    from .encoder import TopDownTreeLSTM
+    tree_lstm = None
+    child_sum_lstm = device(ChildSumTreeLSTM(embedding_size, int(args.hidden/2)))
+    if not args.disable_bidirectional:
+        top_down_tree_lstm = device(TopDownTreeLSTM(embedding_size, int(args.hidden/2)))
+        tree_lstm = device(TreeLSTM(sum_tree_lstm = child_sum_lstm, is_bidirectional = True, top_down_tree_lstm = top_down_tree_lstm))
+    else:
+        tree_lstm = device(TreeLSTM(sum_tree_lstm=child_sum_lstm, is_bidirectional=False))
+
     encoder = device(RNNEncoder(embedding_size=embedding_size, hidden_size=args.hidden,
-                                bidirectional=not args.disable_bidirectional, layers=args.layers, dropout=args.dropout))
+                                bidirectional=not args.disable_bidirectional, layers=args.layers, tree_lstm = tree_lstm, dropout=args.dropout))
     add_optimizer(encoder, (src2src_optimizers, trg2trg_optimizers, src2trg_optimizers, trg2src_optimizers))
 
     # Build decoders
@@ -236,27 +253,31 @@ def main_train():
         f = open(args.src, encoding=args.encoding, errors='surrogateescape')
         corpus = data.CorpusReader(f, max_sentence_length=args.max_sentence_length, cache_size=args.cache)
 
-        #f_tree = open(args.src_tree, encoding=args.encoding, errors='surrogateescape')
-        #trees = data.TreeReader(f_tree, max_sentence_length=args.max_sentence_length, cache_size=args.cache)
+        tree_corpus = None
+        if args.src_tree is not None:
+            f_tree = open(args.src_tree, encoding=args.encoding, errors='surrogateescape')
+            tree_corpus = data.TreeReader(f_tree, max_sentence_length=args.max_sentence_length, cache_size=args.cache)
 
-        src2src_trainer = Trainer(translator=src2src_translator, optimizers=src2src_optimizers, corpus=corpus, batch_size=args.batch, src_lang = args.src_lang, trg_lang = args.trg_lang, core_nlp = core_nlp, type = 'src2src')
+        src2src_trainer = Trainer(translator=src2src_translator, optimizers=src2src_optimizers, corpus=corpus, tree_corpus = tree_corpus, batch_size=args.batch, src_lang = args.src_lang, trg_lang = args.trg_lang, core_nlp = core_nlp, type = 'src2src')
         trainers.append(src2src_trainer)
         if not args.disable_backtranslation:
             trgback2src_trainer = Trainer(translator=trg2src_translator, optimizers=trg2src_optimizers,
-                                          corpus=data.BacktranslatorCorpusReader(corpus=corpus, translator=src2trg_translator), batch_size=args.batch, src_lang = args.src_lang, trg_lang = args.trg_lang, core_nlp = core_nlp,type = 'trg2src')
+                                          corpus=data.BacktranslatorCorpusReader(corpus=corpus, translator=src2trg_translator, tree_corpus=tree_corpus), tree_corpus = tree_corpus,batch_size=args.batch, src_lang = args.src_lang, trg_lang = args.trg_lang, core_nlp = core_nlp,type = 'trg2src')
             trainers.append(trgback2src_trainer)
     if args.trg is not None:
         f = open(args.trg, encoding=args.encoding, errors='surrogateescape')
         corpus = data.CorpusReader(f, max_sentence_length=args.max_sentence_length, cache_size=args.cache)
 
-        #f_tree = open(args.trg_tree, encoding=args.encoding, errors='surrogateescape')
-        #trees = data.TreeReader(f_tree, max_sentence_length=args.max_sentence_length, cache_size=args.cache)
+        tree_corpus = None
+        if args.trg_tree is not None:
+            f_tree = open(args.trg_tree, encoding=args.encoding, errors='surrogateescape')
+            tree_corpus = data.TreeReader(f_tree, max_sentence_length=args.max_sentence_length, cache_size=args.cache)
 
-        trg2trg_trainer = Trainer(translator=trg2trg_translator, optimizers=trg2trg_optimizers, corpus=corpus, batch_size=args.batch, src_lang = args.src_lang, trg_lang = args.trg_lang, core_nlp = core_nlp,type = 'trg2trg')
+        trg2trg_trainer = Trainer(translator=trg2trg_translator, optimizers=trg2trg_optimizers, corpus=corpus, tree_corpus = tree_corpus, batch_size=args.batch, src_lang = args.src_lang, trg_lang = args.trg_lang, core_nlp = core_nlp,type = 'trg2trg')
         trainers.append(trg2trg_trainer)
         if not args.disable_backtranslation:
             srcback2trg_trainer = Trainer(translator=src2trg_translator, optimizers=src2trg_optimizers,
-                                          corpus=data.BacktranslatorCorpusReader(corpus=corpus, translator=trg2src_translator),  batch_size=args.batch, src_lang = args.src_lang, trg_lang = args.trg_lang, core_nlp = core_nlp,type = 'src2trg')
+                                          corpus=data.BacktranslatorCorpusReader(corpus=corpus, translator=trg2src_translator, tree_corpus=tree_corpus),  tree_corpus = tree_corpus, batch_size=args.batch, src_lang = args.src_lang, trg_lang = args.trg_lang, core_nlp = core_nlp,type = 'src2trg')
             trainers.append(srcback2trg_trainer)
     if args.src2trg is not None:
         f1 = open(args.src2trg[0], encoding=args.encoding, errors='surrogateescape')
@@ -319,7 +340,7 @@ def main_train():
     print("Training")
     for step in range(1, args.iterations + 1):
         for trainer in trainers:
-            trainer.step()
+            trainer.step(args.backtranslation_one_line_tree)
 
         if args.save is not None and args.save_interval > 0 and step % args.save_interval == 0:
             save_models('it{0}'.format(step))
@@ -337,7 +358,7 @@ def main_train():
 
 
 class Trainer:
-    def __init__(self, corpus, optimizers, translator, core_nlp, src_lang, trg_lang, type = '', batch_size=50):
+    def __init__(self, corpus, tree_corpus, optimizers, translator, core_nlp, src_lang, trg_lang, type = '', batch_size=50):
         self.corpus = corpus
         self.translator = translator
         self.optimizers = optimizers
@@ -347,8 +368,10 @@ class Trainer:
         self.core_nlp = core_nlp
         self.src_lang = src_lang
         self.trg_lang = trg_lang
+        self.tree_corpus = tree_corpus
 
-    def step(self):
+
+    def step(self,one_line_tree):
         # Reset gradients
         for optimizer in self.optimizers:
             optimizer.zero_grad()
@@ -362,29 +385,74 @@ class Trainer:
 
         if self.type == 'src2src' or self.type == 'src2trg':
             src, trg = self.corpus.next_batch(self.batch_size, self.core_nlp, self.trg_lang)
-            trees = self.get_trees_text(src, self.src_lang, self.core_nlp)
+            src=['.' if line == '' else line for line in src]
+            if self.type == 'src2trg' and one_line_tree:
+                #t= time.time()
+                trees = self.get_one_line_tree(src)
+                #print("oneline="+str(time.time()-t))
+            else:
+                if self.tree_corpus is None:
+                    #t = time.time()
+                    trees = self.get_trees_text(src, self.src_lang, self.core_nlp)
+                    #print("live=" + str(time.time() - t))
+                else:
+                    #t = time.time()
+                    trees = self.tree_corpus.next_batch(self.batch_size)[0]
+                    #print("readcorpus=" + str(time.time() - t))
 
         if self.type == 'trg2trg' or self.type == 'trg2src':
             src, trg = self.corpus.next_batch(self.batch_size, self.core_nlp, self.src_lang)
-            trees = self.get_trees_text(src, self.trg_lang, self.core_nlp)
+            src=['.' if line == '' else line for line in src]
+            if self.type == 'trg2src' and one_line_tree:
+                #t= time.time()
+                trees = self.get_one_line_tree(src)
+                #print("oneline="+str(time.time()-t))
+            else:
+                if self.tree_corpus is None:
+                    #t= time.time()
+                    trees = self.get_trees_text(src, self.trg_lang, self.core_nlp)
+                    #print("live="+str(time.time()-t))
+                else:
+                    #t = time.time()
+                    trees = self.tree_corpus.next_batch(self.batch_size)[0]
+                    #print("readcorpus=" + str(time.time() - t))
 
         self.src_word_count += sum([len(data.tokenize(sentence)) + 1 for sentence in src])  # TODO Depends on special symbols EOS/SOS
         self.trg_word_count += sum([len(data.tokenize(sentence)) + 1 for sentence in trg])  # TODO Depends on special symbols EOS/SOS
         self.io_time += time.time() - t
+        #print("trainer read input tree takes " + str(time.time() - t))
 
 
         # Compute loss
-        t = time.time()
+        #t = time.time()
         loss = self.translator.score(src, trg, trees, train=True)
         self.loss += loss.data[0]
         self.forward_time += time.time() - t
+        #print("compute loss takes " + str(time.time() - t))
 
         # Backpropagate error + optimize
-        t = time.time()
+        #t = time.time()
         loss.div(self.batch_size).backward()
         for optimizer in self.optimizers:
             optimizer.step()
         self.backward_time += time.time() - t
+        #print("backpropagate " + str(time.time() - t))
+
+#    def get_one_line_tree(self, src):
+#        trees = []
+#        for sentence in src:
+#            token_size = len(sentence.strip().split())
+#            one_line_tree = ' '.join(str(i) for i in reversed(range(token_size)))
+#            trees.append(one_line_tree)
+#        return trees
+
+    def get_one_line_tree(self, src):
+        trees = []
+        for sentence in src:
+            token_size = len(sentence.strip().split())
+            one_line_tree = (' '.join(str(i+2) for i in range(token_size -1)) + " 0").strip()
+            trees.append(one_line_tree)
+        return trees
 
     def get_trees_text(self, text, lang, corenlp):
         #t = time.time()

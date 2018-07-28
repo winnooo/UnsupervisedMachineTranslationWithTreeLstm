@@ -19,6 +19,7 @@ import random
 import torch
 import torch.nn as nn
 from torch.autograd import Variable
+import time
 
 
 class Translator:
@@ -58,7 +59,9 @@ class Translator:
 
         varids = self.device(Variable(torch.LongTensor(ids), requires_grad=False, volatile=not train))
         hidden = self.device(self.encoder.initial_hidden(len(sentences)))
+        #t=time.time()
         hidden, context = self.encoder(ids=varids, lengths=lengths, word_embeddings=self.encoder_embeddings, hidden=hidden, trees = trees)
+        #print("translator encoder="+str(time.time()-t))
         return hidden, context, lengths
 
     def mask(self, lengths):
@@ -160,18 +163,24 @@ class Translator:
             raise Exception('Sentence and hypothesis lengths do not match')
 
         # Encode
+        #t= time.time()
         hidden, context, context_lengths = self.encode(src, trees, train)
         context_mask = self.mask(context_lengths)
+        #print("encode="+str(time.time()-t))
 
         # Decode
+        #t= time.time()
         initial_output = self.device(self.decoder.initial_output(len(src)))
         input_ids, lengths = self.trg_dictionary.sentences2ids(trg, eos=False, sos=True)
         input_ids_var = self.device(Variable(torch.LongTensor(input_ids), requires_grad=False))
         logprobs, hidden, _ = self.decoder(input_ids_var, lengths, self.decoder_embeddings, hidden, context, context_mask, initial_output, self.generator)
+        #print("encode="+str(time.time()-t))
 
         # Compute loss
+        #t= time.time()
         output_ids, lengths = self.trg_dictionary.sentences2ids(trg, eos=True, sos=False)
         output_ids_var = self.device(Variable(torch.LongTensor(output_ids), requires_grad=False))
         loss = self.criterion(logprobs.view(-1, logprobs.size()[-1]), output_ids_var.view(-1))
+        #print("loss="+str(time.time()-t))
 
         return loss

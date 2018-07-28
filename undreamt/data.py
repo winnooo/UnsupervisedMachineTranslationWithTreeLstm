@@ -228,14 +228,18 @@ class CorpusReader:
         return [self.cache[i][1] for i in indices], [self.cache[i][2] for i in indices]
 
 class BacktranslatorCorpusReader:
-    def __init__(self, corpus, translator):
+    def __init__(self, corpus, translator, tree_corpus = None):
         self.corpus = corpus
         self.translator = translator
         self.epoch = corpus.epoch
+        self.tree_corpus = tree_corpus
 
     def next_batch(self, size, core_nlp, lang):
         src, trg = self.corpus.next_batch(size, core_nlp, lang)
-        trees = self.get_trees_text(trg, lang, core_nlp)
+        if self.tree_corpus is not None:
+            trees = self.tree_corpus.next_batch(size)[0]
+        else:
+            trees = self.get_trees_text(trg, lang, core_nlp)
         src = self.translator.greedy(trg, trees, train=False)
         self.epoch = self.corpus.epoch
         return src, trg
